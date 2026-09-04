@@ -11,8 +11,9 @@ import {
   Copy,
   Check,
   Loader2,
+  TriangleAlert,
 } from "lucide-react"
-import { analyzeRequest, type Analysis } from "@/lib/analyze"
+import { type Analysis } from "@/lib/analyze"
 
 const SAMPLE = `Hi, I was charged twice for my Pro subscription this month and I need a refund ASAP. My account email is jordan@example.com. This is really frustrating because it's the second time this has happened.`
 
@@ -20,24 +21,49 @@ export function SupportAssistant() {
   const [input, setInput] = useState("")
   const [result, setResult] = useState<Analysis | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!input.trim() || loading) return
     setLoading(true)
     setResult(null)
-    // Simulate processing latency for the mock analysis.
-    setTimeout(() => {
-      setResult(analyzeRequest(input))
+    setError(null)
+
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input }),
+      })
+
+      const data = await res.json().catch(() => null)
+
+      if (!res.ok || !data?.analysis) {
+        throw new Error(data?.error ?? "Something went wrong while analyzing the request.")
+      }
+
+      setResult(data.analysis as Analysis)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while analyzing the request.",
+      )
+    } finally {
       setLoading(false)
-    }, 700)
+    }
   }
 
   const handleCopy = async () => {
     if (!result) return
-    await navigator.clipboard.writeText(result.draftResponse)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1800)
+    try {
+      await navigator.clipboard.writeText(result.draftResponse)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // Clipboard may be unavailable (permissions / insecure context); ignore.
+    }
   }
 
   return (
@@ -98,7 +124,17 @@ export function SupportAssistant() {
           Analysis results
         </h2>
 
-        {!result && !loading && (
+        {error && !loading && (
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+            <TriangleAlert className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-red-700">Analysis failed</p>
+              <p className="mt-0.5 text-sm text-red-900/80">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {!result && !loading && !error && (
           <div className="flex h-full min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/50 p-8 text-center">
             <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-secondary">
               <MessageSquareText className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
